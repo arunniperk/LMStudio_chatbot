@@ -1,0 +1,13 @@
+# Ignore PyInstaller build folders
+build/
+dist/
+dist_installer/
+*.spec
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+
+# Ignore saved chat logs and local user config
+saved_chats/
+chatbot_config.json

@@ -1,0 +1,6 @@
+openai>=1.30.0         # LM Studio OpenAI-compatible API
+customtkinter>=5.2.2   # Desktop UI
+pynvml>=11.5.0         # NVIDIA VRAM monitoring
+pypdf>=4.0.0           # Read PDF attachments
+psutil>=5.9.0          # CPU and RAM monitoring
+fpdf2>=2.7.0           # Export responses as PDF
