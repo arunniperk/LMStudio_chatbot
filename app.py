@@ -1,9 +1,11 @@
 """
-Local Chatbot
+Local Chatbot v1.2 (iMessage Edition)
 Backend : LM Studio (http://localhost:1234)
 UI      : Themeable — Windows 7 Aero (Light) / Win7 Dark Mode
 """
 
+import os
+import sys
 import customtkinter as ctk
 import threading
 import json
@@ -13,6 +15,9 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox
 from openai import OpenAI, APIConnectionError
+import platform
+import subprocess
+import re
 
 # ── Optional deps ─────────────────────────────────────────────────────────────
 try:
@@ -31,17 +36,27 @@ try:
     import psutil;  PSUTIL_OK = True
 except ImportError: PSUTIL_OK = False
 
-import platform, subprocess, re
 
 # ── HARDWARE DETECTION ────────────────────────────────────────────────────────
 def _detect_cpu() -> str:
     name = ""
     try:
         if platform.system() == "Windows":
-            out  = subprocess.check_output("wmic cpu get Name /format:list",
-                       shell=True, stderr=subprocess.DEVNULL).decode(errors="ignore")
-            m    = re.search(r"Name=(.+)", out)
-            if m: name = m.group(1).strip()
+            try:
+                out = subprocess.check_output(
+                    ["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_Processor).Name"],
+                    stderr=subprocess.DEVNULL, 
+                    creationflags=subprocess.CREATE_NO_WINDOW
+                ).decode(errors="ignore")
+                name = out.strip().split('\n')[0] 
+            except Exception:
+                out = subprocess.check_output(
+                    "wmic cpu get Name /format:list",
+                    shell=True, stderr=subprocess.DEVNULL,
+                    creationflags=subprocess.CREATE_NO_WINDOW
+                ).decode(errors="ignore")
+                m = re.search(r"Name=(.+)", out)
+                if m: name = m.group(1).strip()
         elif platform.system() == "Darwin":
             out  = subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"],
                        stderr=subprocess.DEVNULL).decode(errors="ignore")
@@ -89,47 +104,49 @@ CTX       = 8192
 SAVE_DIR  = Path("saved_chats")
 CFG_FILE  = Path("chatbot_config.json")
 
-# ── THEMES (Windows 7 Aero) ───────────────────────────────────────────────────
+# ── THEMES (iMessage Styled) ──────────────────────────────────────────────────
 THEMES = {
     "dark": {
         "CTK_MODE":  "dark",
-        "BG":        "#0F1419",
-        "SURFACE":   "#1A2128",
-        "SURFACE2":  "#242D35",
-        "BORDER":    "#3E4C59",
-        "ACCENT":    "#3DA5FF",
-        "USER_BG":   "#132A3F",
-        "USER_BORD": "#1D3B54",
-        "TEXT_PRI":  "#F1F3F5",
-        "TEXT_SEC":  "#A1B0BD",
-        "TEXT_DIM":  "#708291",
-        "SUCCESS":   "#40C057",
-        "WARN":      "#FAB005",
-        "ERROR":     "#FA5252",
-        "BAR_CPU":   "#3DA5FF",
-        "BAR_RAM":   "#40C057",
-        "THINK_BG":  "#141A20",
-        "ASST_LABEL":"#3DA5FF",
+        "BG":        "#000000",
+        "SURFACE":   "#1C1C1E",
+        "SURFACE2":  "#2C2C2E",
+        "BORDER":    "#38383A",
+        "ACCENT":    "#0A84FF",
+        "USER_BG":   "#0A84FF",   # iMessage Dark Blue
+        "USER_TEXT": "#FFFFFF",   # iMessage White Text
+        "ASST_BG":   "#262628",   # iMessage Dark Gray
+        "ASST_TEXT": "#FFFFFF",   # iMessage White Text
+        "TEXT_PRI":  "#FFFFFF",
+        "TEXT_SEC":  "#8E8E93",
+        "TEXT_DIM":  "#636366",
+        "SUCCESS":   "#30D158",
+        "WARN":      "#FF9F0A",
+        "ERROR":     "#FF453A",
+        "BAR_CPU":   "#0A84FF",
+        "BAR_RAM":   "#30D158",
+        "THINK_BG":  "#1C1C1E",
     },
     "light": {
         "CTK_MODE":  "light",
-        "BG":        "#EBF1F8",
-        "SURFACE":   "#FFFFFF",
-        "SURFACE2":  "#F2F6FA",
-        "BORDER":    "#A9C4E0",
-        "ACCENT":    "#0066CC",
-        "USER_BG":   "#E1EFFF",
-        "USER_BORD": "#B8D4F0",
+        "BG":        "#FFFFFF",
+        "SURFACE":   "#F2F2F7",
+        "SURFACE2":  "#E5E5EA",
+        "BORDER":    "#D1D1D6",
+        "ACCENT":    "#007AFF",
+        "USER_BG":   "#007AFF",   # iMessage Light Blue
+        "USER_TEXT": "#FFFFFF",   # iMessage White Text
+        "ASST_BG":   "#E9E9EB",   # iMessage Light Gray
+        "ASST_TEXT": "#000000",   # iMessage Black Text
         "TEXT_PRI":  "#000000",
-        "TEXT_SEC":  "#444444",
-        "TEXT_DIM":  "#777777",
-        "SUCCESS":   "#107C10",
-        "WARN":      "#D83B01",
-        "ERROR":     "#E81123",
-        "BAR_CPU":   "#0066CC",
-        "BAR_RAM":   "#107C10",
-        "THINK_BG":  "#F8FAFC",
-        "ASST_LABEL":"#0066CC",
+        "TEXT_SEC":  "#3A3A3C",
+        "TEXT_DIM":  "#8E8E93",
+        "SUCCESS":   "#34C759",
+        "WARN":      "#FF9500",
+        "ERROR":     "#FF3B30",
+        "BAR_CPU":   "#007AFF",
+        "BAR_RAM":   "#34C759",
+        "THINK_BG":  "#F2F2F7",
     },
 }
 
@@ -232,7 +249,7 @@ class ModelPicker(ctk.CTkToplevel):
 
         self.update_idletasks()
         ax = anchor.winfo_rootx()
-        h  = 72 * len(models) + 96
+        h  = 56 * len(models) + 80
         ay = anchor.winfo_rooty() - h - 8
         self.geometry(f"320x{h}+{ax}+{ay}")
 
@@ -243,10 +260,10 @@ class ModelPicker(ctk.CTkToplevel):
         for m in models:
             self._row(card, m, m["id"] == current_id, on_select)
 
-        ctk.CTkFrame(card, height=1, fg_color=T["BORDER"]).pack(fill="x", padx=12, pady=(4, 0))
+        ctk.CTkFrame(card, height=1, fg_color=T["BORDER"]).pack(fill="x", padx=12, pady=(2, 0))
 
         tr = ctk.CTkFrame(card, fg_color="transparent")
-        tr.pack(fill="x", padx=16, pady=10)
+        tr.pack(fill="x", padx=16, pady=8)
         lc = ctk.CTkFrame(tr, fg_color="transparent")
         lc.pack(side="left", fill="both", expand=True)
         ctk.CTkLabel(lc, text="Deep Reasoning",
@@ -270,10 +287,10 @@ class ModelPicker(ctk.CTkToplevel):
 
         if active:
             ctk.CTkFrame(row, width=3, fg_color=T["ACCENT"],
-                         corner_radius=0).pack(side="left", fill="y", pady=6, padx=(6, 0))
+                         corner_radius=0).pack(side="left", fill="y", pady=4, padx=(6, 0))
 
         inner = ctk.CTkFrame(row, fg_color="transparent")
-        inner.pack(side="left", fill="both", expand=True, padx=12, pady=12)
+        inner.pack(side="left", fill="both", expand=True, padx=12, pady=6)
         inner.bind("<Button-1>", lambda e: (on_select(m), self.destroy()))
 
         ctk.CTkLabel(inner, text=m["label"],
@@ -293,7 +310,7 @@ ctk.set_default_color_theme("blue")
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Local Chatbot")
+        self.title("Local Chatbot v1.2")
         self.geometry("1300x800")
         self.minsize(960, 620)
         self.configure(fg_color=T["BG"])
@@ -306,9 +323,9 @@ class App(ctk.CTk):
         self._cur                     = FALLBACK[0]
         self.think_var                = ctk.BooleanVar(value=False)
         self._attachments : list[dict] = []
-        self._stream_var  : ctk.StringVar | None = None
-        self._stream_label            = None
+        self._stream_textbox          = None
         self._msg_count               = 0
+        self._total_tokens            = 0
         self._last_response           = ""
         self._theme_id                = _theme_id
 
@@ -343,22 +360,28 @@ class App(ctk.CTk):
     def _apply_theme(self):
         self.configure(fg_color=T["BG"])
 
+        # Filter out dead widgets, then apply
+        self._tw_frames = [x for x in self._tw_frames if x[0].winfo_exists()]
         for widget, prop, key in self._tw_frames:
             try: widget.configure(**{prop: T[key]})
             except Exception: pass
 
+        self._tw_labels = [x for x in self._tw_labels if x[0].winfo_exists()]
         for widget, prop, key in self._tw_labels:
             try: widget.configure(**{prop: T[key]})
             except Exception: pass
 
+        self._tw_buttons = [x for x in self._tw_buttons if x[0].winfo_exists()]
         for widget, props in self._tw_buttons:
             try: widget.configure(**{k: T[v] for k, v in props.items()})
             except Exception: pass
 
+        self._tw_boxes = [x for x in self._tw_boxes if x[0].winfo_exists()]
         for widget, props in self._tw_boxes:
             try: widget.configure(**{k: T[v] for k, v in props.items()})
             except Exception: pass
 
+        self._tw_bars = [x for x in self._tw_bars if x[0].winfo_exists()]
         for widget, key in self._tw_bars:
             try: widget.configure(progress_color=T[key])
             except Exception: pass
@@ -402,7 +425,7 @@ class App(ctk.CTk):
             ctk.CTkLabel(logo, text="●", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=T["ACCENT"]),
             "text_color", "ACCENT").pack(side="left")
         self._reg_lbl(
-            ctk.CTkLabel(logo, text="  Local Chatbot",
+            ctk.CTkLabel(logo, text="  Local Chatbot v1.2",
                          font=ctk.CTkFont(family="Segoe UI", size=15, weight="bold"), text_color=T["TEXT_PRI"]),
             "text_color", "TEXT_PRI").pack(side="left")
 
@@ -419,7 +442,7 @@ class App(ctk.CTk):
         self._reg_btn(self.theme_btn,
                       hover_color="SURFACE2", text_color="TEXT_SEC")
 
-        # Status Label (Moved to top left)
+        # Status Label 
         self.status_lbl = self._reg_lbl(
             ctk.CTkLabel(sb, text="● Connecting to LM Studio...",
                          font=ctk.CTkFont(family="Segoe UI", size=11), text_color=T["WARN"]),
@@ -433,8 +456,21 @@ class App(ctk.CTk):
             "text_color", "TEXT_SEC").pack(anchor="w", padx=20, pady=(0, 14))
 
         div1 = ctk.CTkFrame(sb, height=1, fg_color=T["BORDER"])
-        div1.pack(fill="x", padx=16, pady=(0, 14))
+        div1.pack(fill="x", padx=16, pady=(0, 12))
         self._reg_frame(div1, "fg_color", "BORDER")
+
+        # Session Tokens Counter
+        self._sb_lbl(sb, "SESSION TOKENS")
+        self.token_lbl = self._reg_lbl(
+            ctk.CTkLabel(sb, text="0",
+                         font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
+                         text_color=T["TEXT_PRI"]),
+            "text_color", "TEXT_PRI")
+        self.token_lbl.pack(anchor="w", padx=20, pady=(2, 10))
+
+        div_tok = ctk.CTkFrame(sb, height=1, fg_color=T["BORDER"])
+        div_tok.pack(fill="x", padx=16, pady=(0, 12))
+        self._reg_frame(div_tok, "fg_color", "BORDER")
 
         # Model
         self._sb_lbl(sb, "MODEL")
@@ -690,7 +726,7 @@ class App(ctk.CTk):
 
         # Input
         inp_outer = ctk.CTkFrame(self._main_frame, fg_color="transparent")
-        inp_outer.pack(fill="x", padx=20, pady=(6, 14))
+        inp_outer.pack(fill="x", padx=20, pady=(4, 10))
         self.inp_outer = inp_outer
 
         self.attach_strip = ctk.CTkFrame(inp_outer, fg_color="transparent")
@@ -702,17 +738,17 @@ class App(ctk.CTk):
         self._reg_frame(self.inp_card, "fg_color", "SURFACE")
 
         self.inp = ctk.CTkTextbox(
-            self.inp_card, height=52, font=ctk.CTkFont(family="Segoe UI", size=14),
+            self.inp_card, height=48, font=ctk.CTkFont(family="Segoe UI", size=14),
             fg_color="transparent", border_width=0,
             text_color=T["TEXT_PRI"], wrap="word",
         )
-        self.inp.pack(fill="x", padx=16, pady=(12, 4))
+        self.inp.pack(fill="x", padx=16, pady=(8, 2))
         self._reg_box(self.inp, text_color="TEXT_PRI")
         
         self.inp.bind("<Return>", self._on_enter)
 
         bot = ctk.CTkFrame(self.inp_card, fg_color="transparent")
-        bot.pack(fill="x", padx=12, pady=(2, 10))
+        bot.pack(fill="x", padx=12, pady=(0, 8))
 
         self.attach_btn = self._reg_btn(
             ctk.CTkButton(bot, text="+", width=32, height=30,
@@ -844,6 +880,12 @@ class App(ctk.CTk):
 
     def _open_file(self, path: Path):
         import os, subprocess, sys
+        
+        # Intercept JSON chat logs and load them into the UI
+        if path.suffix.lower() == ".json":
+            self._load_chat(path)
+            return
+            
         try:
             if sys.platform == "win32": os.startfile(str(path))
             elif sys.platform == "darwin": subprocess.run(["open", str(path)])
@@ -918,48 +960,77 @@ class App(ctk.CTk):
 
     def _add_user_bubble(self, text, attach_note=""):
         wrapper = ctk.CTkFrame(self.chat_scroll, fg_color="transparent")
-        wrapper.pack(fill="x", padx=20, pady=(14, 2))
+        wrapper.pack(fill="x", padx=20, pady=(4, 1))
+        
+        # Invisible frame to push the bubble to the right
         ctk.CTkFrame(wrapper, fg_color="transparent").pack(side="left", fill="x", expand=True)
-        bubble = ctk.CTkFrame(wrapper, fg_color=T["USER_BG"], corner_radius=6,
-                              border_width=1, border_color=T["USER_BORD"])
+        
+        # iMessage Style: High corner_radius for pill shape, custom BG
+        bubble = ctk.CTkFrame(wrapper, fg_color=T["USER_BG"], corner_radius=16)
         bubble.pack(side="right")
-        ctk.CTkLabel(bubble, text=(text + attach_note).strip(),
-                     font=ctk.CTkFont(family="Segoe UI", size=13), text_color=T["TEXT_PRI"],
-                     wraplength=480, justify="left", anchor="w").pack(padx=16, pady=12)
+        self._reg_frame(bubble, "fg_color", "USER_BG")
+        
+        full_text = (text + attach_note).strip()
+        
+        # Dynamic Width & Height Math
+        lines = full_text.split("\n")
+        max_char_len = max((len(line) for line in lines), default=0)
+        est_width = min(480, max_char_len * 8 + 24)
+        est_width = max(50, est_width) 
+        
+        wrap_limit = max(10, est_width // 8)
+        line_count = sum(max(1, len(line) // wrap_limit + 1) for line in lines)
+        est_height = max(28, line_count * 21 + 10)
+        
+        tb = ctk.CTkTextbox(bubble, font=ctk.CTkFont(family="Segoe UI", size=13),
+                            text_color=T["USER_TEXT"], fg_color="transparent",
+                            border_width=0, wrap="word", 
+                            width=est_width, height=est_height)
+        
+        tb.pack(padx=12, pady=8)
+        tb.insert("1.0", full_text)
+        tb.configure(state="disabled") 
+        self._reg_box(tb, text_color="USER_TEXT")
 
-    def _add_asst_bubble(self) -> ctk.StringVar:
+    def _add_asst_bubble(self):
         wrapper = ctk.CTkFrame(self.chat_scroll, fg_color="transparent")
-        wrapper.pack(fill="x", padx=20, pady=(2, 2))
-        ctk.CTkFrame(wrapper, width=3, fg_color=T["ACCENT"],
-                     corner_radius=0).pack(side="left", fill="y", padx=(0, 10), pady=4)
-        bubble = ctk.CTkFrame(wrapper, fg_color=T["SURFACE"], corner_radius=6)
-        bubble.pack(side="left", fill="x", expand=True)
-        hdr = ctk.CTkFrame(bubble, fg_color="transparent")
-        hdr.pack(fill="x", padx=14, pady=(10, 2))
-        ctk.CTkLabel(hdr, text="Assistant", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
-                     text_color=T["ASST_LABEL"]).pack(side="left")
-        sv  = ctk.StringVar(value="▌")
-        lbl = ctk.CTkLabel(bubble, textvariable=sv, font=ctk.CTkFont(family="Segoe UI", size=13),
-                           text_color=T["TEXT_PRI"], wraplength=560,
-                           justify="left", anchor="w")
-        lbl.pack(fill="x", padx=14, pady=(2, 14))
-        self._stream_label = lbl
+        wrapper.pack(fill="x", padx=20, pady=(1, 1))
+        
+        # iMessage Style: Removed Assistant header & accent bar, Light/Dark Gray BG
+        bubble = ctk.CTkFrame(wrapper, fg_color=T["ASST_BG"], corner_radius=16)
+        bubble.pack(side="left")
+        self._reg_frame(bubble, "fg_color", "ASST_BG")
+        
+        tb = ctk.CTkTextbox(bubble, font=ctk.CTkFont(family="Segoe UI", size=13),
+                            text_color=T["ASST_TEXT"], fg_color="transparent",
+                            border_width=0, wrap="word", height=28, width=560)
+        
+        tb.pack(fill="x", padx=12, pady=8)
+        tb.insert("1.0", "▌")
+        tb.configure(state="disabled")
+        self._reg_box(tb, text_color="ASST_TEXT")
+        
+        self._stream_textbox = tb
         self._scroll_bottom()
-        return sv
+        return tb
 
     def _add_thinking_bubble(self, thinking: str):
         wrapper = ctk.CTkFrame(self.chat_scroll, fg_color="transparent")
-        wrapper.pack(fill="x", padx=36, pady=(0, 10))
-        frame = ctk.CTkFrame(wrapper, fg_color=T["THINK_BG"], corner_radius=6,
+        wrapper.pack(fill="x", padx=36, pady=(0, 2))
+        
+        # Thinking bubble stays slightly distinct
+        frame = ctk.CTkFrame(wrapper, fg_color=T["THINK_BG"], corner_radius=12,
                              border_width=1, border_color=T["BORDER"])
         frame.pack(fill="x")
+        self._reg_frame(frame, "fg_color", "THINK_BG")
+        
         ctk.CTkLabel(frame, text="⚙  Reasoning trace",
                      font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
-                     text_color=T["TEXT_DIM"]).pack(anchor="w", padx=14, pady=(8, 2))
+                     text_color=T["TEXT_DIM"]).pack(anchor="w", padx=14, pady=(4, 0))
         preview = thinking[:500] + ("…" if len(thinking) > 500 else "")
         ctk.CTkLabel(frame, text=preview, font=ctk.CTkFont(family="Segoe UI", size=11),
                      text_color=T["TEXT_DIM"], wraplength=520,
-                     justify="left", anchor="w").pack(fill="x", padx=14, pady=(0, 10))
+                     justify="left", anchor="w").pack(fill="x", padx=14, pady=(0, 4))
 
     # ──────────────────────────────────────────────────────────────────────────
     # FILE ATTACHMENT
@@ -1035,11 +1106,35 @@ class App(ctk.CTk):
         return [{"type": "text", "text": full}] + imgs if imgs else full
 
     # ──────────────────────────────────────────────────────────────────────────
-    # SEND / STREAM
+    # SEND / STREAM / CONTEXT WINDOW
     # ──────────────────────────────────────────────────────────────────────────
     def _on_enter(self, event):
         if not (event.state & 0x1):
             self._send(); return "break"
+
+    def _get_context_window(self, safe_limit=6500):
+        """Calculates a rolling context window to prevent API crashes"""
+        sys_p = self.sys_box.get("1.0", "end").strip()
+        sys_msg = {"role": "system", "content": sys_p}
+        
+        current_tokens = int(len(sys_p.split()) * 1.3)
+        rolling_msgs = []
+        
+        for msg in reversed(self._messages):
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                text_content = next((item["text"] for item in content if item["type"] == "text"), "")
+                msg_tokens = int(len(text_content.split()) * 1.3) + 250
+            else:
+                msg_tokens = int(len(content.split()) * 1.3)
+            
+            if current_tokens + msg_tokens > safe_limit and len(rolling_msgs) > 0:
+                break
+                
+            rolling_msgs.insert(0, msg)
+            current_tokens += msg_tokens
+            
+        return [sys_msg] + rolling_msgs
 
     def _send(self):
         if self._generating: return
@@ -1057,12 +1152,14 @@ class App(ctk.CTk):
         self._msg_count += 1; self._update_turns()
 
         self._add_user_bubble(text, attach_note)
-        self._stream_var = self._add_asst_bubble()
+        self._add_asst_bubble()
 
         self._attachments = []; self._refresh_attach_strip()
 
-        sys_p = self.sys_box.get("1.0", "end").strip()
-        msgs  = [{"role": "system", "content": sys_p}] + self._messages
+        # Generate a safe rolling context window instead of sending all history
+        safe_limit = int(CTX * 0.8)
+        msgs = self._get_context_window(safe_limit=safe_limit)
+        
         model = self._cur["id"]
 
         self._generating = True; self._stop_flag = False
@@ -1077,17 +1174,41 @@ class App(ctk.CTk):
 
     def _stream(self, model, msgs):
         fd = ft = ""
+        chunk_count = 0
         try:
-            stream = client.chat.completions.create(
-                model=model, messages=msgs, stream=True, max_tokens=CTX)
+            try:
+                stream = client.chat.completions.create(
+                    model=model, messages=msgs, stream=True,
+                    stream_options={"include_usage": True}
+                )
+            except Exception:
+                stream = client.chat.completions.create(
+                    model=model, messages=msgs, stream=True
+                )
+
             for chunk in stream:
                 if self._stop_flag: break
+                
+                if hasattr(chunk, 'usage') and chunk.usage:
+                    self._total_tokens += chunk.usage.total_tokens
+                    self.after(0, lambda t=self._total_tokens: self.token_lbl.configure(text=f"{t:,}"))
+
+                if not hasattr(chunk, 'choices') or not chunk.choices: continue
                 delta = chunk.choices[0].delta.content or ""
                 if not delta: continue
+                
+                chunk_count += 1
                 d, t = self._parser.feed(delta)
                 fd += d; ft += t
                 self.after(0, self._update_stream, fd)
+                
             d, t = self._parser.flush(); fd += d; ft += t
+            
+            if chunk_count > 0 and not (hasattr(chunk, 'usage') and chunk.usage):
+                est_prompt = sum(len(str(m["content"]).split()) * 1.3 for m in msgs)
+                self._total_tokens += int(est_prompt + chunk_count)
+                self.after(0, lambda t=self._total_tokens: self.token_lbl.configure(text=f"~{t:,}"))
+
         except APIConnectionError:
             fd = "⚠  Cannot reach LM Studio — is the server running on port 1234?"
             self.after(0, lambda: self._set_status("⚠ LM Studio Not Reachable", T["ERROR"]))
@@ -1099,31 +1220,102 @@ class App(ctk.CTk):
         self.after(0, self._done, fd, ft)
 
     def _update_stream(self, text):
-        if self._stream_var:
-            self._stream_var.set(text or "▌")
-            if self._stream_label:
-                w = self.chat_scroll.winfo_width()
-                if w > 100: self._stream_label.configure(wraplength=max(300, w - 140))
+        if hasattr(self, '_stream_textbox') and self._stream_textbox:
+            self._stream_textbox.configure(state="normal")
+            self._stream_textbox.delete("1.0", "end")
+            
+            display_text = text + "▌" if text else "▌"
+            self._stream_textbox.insert("1.0", display_text)
+            
+            lines = 0
+            for line in display_text.split("\n"):
+                lines += max(1, len(line) // 75 + 1)
+                
+            new_height = max(28, lines * 22 + 10)
+            self._stream_textbox.configure(height=new_height)
+            self._stream_textbox.configure(state="disabled")
+            
             self._scroll_bottom()
 
     def _done(self, display, thinking):
         self._generating = False
         self.stop_btn.pack_forget(); self.send_btn.pack(side="right")
         self._set_status("● LM Studio Ready", T["SUCCESS"])
-        if self._stream_var: self._stream_var.set(display or "")
+        
+        if hasattr(self, '_stream_textbox') and self._stream_textbox:
+            self._stream_textbox.configure(state="normal")
+            self._stream_textbox.delete("1.0", "end")
+            self._stream_textbox.insert("1.0", display or "")
+            
+            lines = 0
+            for line in (display or "").split("\n"):
+                lines += max(1, len(line) // 75 + 1)
+            self._stream_textbox.configure(height=max(28, lines * 22 + 10))
+            self._stream_textbox.configure(state="disabled")
+            
         self.after(0, self._set_output, display)
         if thinking and self.think_var.get(): self._add_thinking_bubble(thinking)
         self._scroll_bottom()
 
     # ──────────────────────────────────────────────────────────────────────────
-    # CLEAR / SAVE / TURNS
+    # CLEAR / SAVE / LOAD / TURNS
     # ──────────────────────────────────────────────────────────────────────────
     def _clear(self):
         if self._generating: return
-        self._messages = []; self._msg_count = 0; self._update_turns()
+        self._messages = []; self._msg_count = 0; self._total_tokens = 0
+        self._update_turns()
+        self.token_lbl.configure(text="0")
         for w in self.chat_scroll.winfo_children(): w.destroy()
         self.chat_outer.pack_forget()
         self.greet_frame.pack(fill="both", expand=True)
+
+    def _load_chat(self, path: Path):
+        if self._generating: return
+        
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            
+            if not isinstance(data, list): return
+            
+            self._clear()        
+            self._show_chat()    
+            
+            for msg in data:
+                role = msg.get("role")
+                content = msg.get("content", "")
+                
+                text_content = content
+                if isinstance(content, list):
+                    text_content = next((item["text"] for item in content if item["type"] == "text"), "[Image attached]")
+                
+                if role == "user":
+                    self._add_user_bubble(text_content)
+                    self._messages.append(msg)
+                    self._msg_count += 1
+                    
+                elif role == "assistant":
+                    tb = self._add_asst_bubble()
+                    tb.configure(state="normal")
+                    tb.delete("1.0", "end")
+                    tb.insert("1.0", text_content)
+                    
+                    lines = 0
+                    for line in text_content.split("\n"):
+                        lines += max(1, len(line) // 75 + 1)
+                    
+                    tb.configure(height=max(28, lines * 22 + 10))
+                    tb.configure(state="disabled")
+                    
+                    self._messages.append(msg)
+                    self._msg_count += 1
+                    
+            self._update_turns()
+            self._set_status(f"Loaded: {path.name}", T["SUCCESS"])
+            self.after(3000, lambda: self._set_status("● LM Studio Ready", T["SUCCESS"]))
+            
+        except Exception as e:
+            self._set_status("⚠ Error loading chat", T["ERROR"])
 
     def _save(self):
         SAVE_DIR.mkdir(exist_ok=True)
